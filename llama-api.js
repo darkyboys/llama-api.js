@@ -21,7 +21,7 @@ function setServerUrl(baseUrl) {
 
 
 // Streaming response
-function get_response(body, element) {
+function get_response(body, element, callback = null, rmd = false) {
   // 🛑 stop any previous request automatically
   if (activeController) {
     activeController.abort();
@@ -54,51 +54,54 @@ function get_response(body, element) {
       const reader = res.body.getReader();
 
       let buffer = "";
-    let renderTimeout = null;
-    
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-    
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
-    
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-    
-        const data = line.slice(6).trim();
-    
-        if (data === "[DONE]") continue;
-    
-        try {
-          const json = JSON.parse(data);
-          const text = json?.choices?.[0]?.delta?.content;
-        
-          if (!text) continue;
-        
-          // 🧠 accumulate stream
-          buffer += text;
-        
-          // ⚡ immediate fallback (smooth UX)
-          element.textContent = buffer;
-        
-          // 🎨 debounce markdown rendering
-          clearTimeout(renderTimeout);
-          renderTimeout = setTimeout(() => {
-            if (window.marked) {
-              element.innerHTML = marked.parse(buffer);
-            } else {
-              element.textContent = buffer;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+
+          try {
+            const json = JSON.parse(data);
+            const text = json?.choices?.[0]?.delta?.content;
+
+            if (!text) continue;
+
+            buffer += text;
+
+            // 🎯 CUSTOM TRANSFORM MODE (callback controls output)
+            if (typeof callback === "function") {
+              const transformed = callback(buffer);
+
+              // fallback if callback returns nothing
+              const output = transformed ?? buffer;
+
+              if (rmd) {
+                element.innerHTML = output;
+              } else {
+                element.textContent = output;
+              }
+
+              continue;
             }
-          }, 60);
-        
-        } catch (e) {
-          // ignore malformed chunks safely
+
+            // ⚡ DEFAULT MODE (no callback)
+            element.textContent = buffer;
+
+          } catch (e) {
+            // ignore malformed chunks safely
+          }
         }
       }
-    }
 
-      // flush decoder (important edge-case fix)
+      // flush decoder (edge-case safety)
       element.append(document.createTextNode(decoder.decode()));
 
     } catch (err) {
