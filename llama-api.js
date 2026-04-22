@@ -22,7 +22,6 @@ function setServerUrl(baseUrl) {
 
 // Streaming response
 function get_response(body, element, callback = null, rmd = false) {
-  // 🛑 stop any previous request automatically
   if (activeController) {
     activeController.abort();
   }
@@ -32,91 +31,85 @@ function get_response(body, element, callback = null, rmd = false) {
 
   element.textContent = "";
 
-  (async () => {
-    const decoder = new TextDecoder("utf-8");
-
-    try {
-      const res = await fetch(SERVER_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          stream: true,
-          ...body,
-        }),
-      });
-
-      if (!res.ok || !res.body) {
-        element.textContent = "❌ Request failed";
-        return;
-      }
-
-      const reader = res.body.getReader();
-
+  return new Promise((resolve, reject) => {
+    (async () => {
+      const decoder = new TextDecoder("utf-8");
       let buffer = "";
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      try {
+        const res = await fetch(SERVER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            stream: true,
+            ...body,
+          }),
+        });
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
+        if (!res.ok || !res.body) {
+          element.textContent = "❌ Request failed";
+          reject("Request failed");
+          return;
+        }
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
+        const reader = res.body.getReader();
 
-          const data = line.slice(6).trim();
-          if (data === "[DONE]") continue;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
 
-          try {
-            const json = JSON.parse(data);
-            const text = json?.choices?.[0]?.delta?.content;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
 
-            if (!text) continue;
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
 
-            buffer += text;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") continue;
 
-            // 🎯 CUSTOM TRANSFORM MODE (callback controls output)
-            if (typeof callback === "function") {
-              const transformed = callback(buffer);
+            try {
+              const json = JSON.parse(data);
+              const text = json?.choices?.[0]?.delta?.content;
 
-              // fallback if callback returns nothing
-              const output = transformed ?? buffer;
+              if (!text) continue;
 
-              if (rmd) {
-                element.innerHTML = output;
+              buffer += text;
+
+              if (typeof callback === "function") {
+                const transformed = callback(buffer);
+                const output = transformed ?? buffer;
+
+                element.textContent = rmd ? "" : output;
+                if (rmd) element.innerHTML = output;
               } else {
-                element.textContent = output;
+                element.textContent = buffer;
               }
 
-              continue;
-            }
-
-            // ⚡ DEFAULT MODE (no callback)
-            element.textContent = buffer;
-
-          } catch (e) {
-            // ignore malformed chunks safely
+            } catch {}
           }
         }
+
+        // final flush
+        element.append(document.createTextNode(decoder.decode()));
+
+        // "finished" signal
+        resolve(buffer);
+
+      } catch (err) {
+        if (err.name === "AbortError") {
+          console.log("🛑 Stopped");
+          reject("aborted");
+        } else {
+          console.error(err);
+          element.textContent = "❌ Error during generation";
+          reject(err);
+        }
+      } finally {
+        activeController = null;
       }
-
-      // flush decoder (edge-case safety)
-      element.append(document.createTextNode(decoder.decode()));
-
-    } catch (err) {
-      if (err.name === "AbortError") {
-        console.log("🛑 Generation stopped");
-      } else {
-        console.error(err);
-        element.textContent = "❌ Error during generation";
-      }
-    } finally {
-      activeController = null;
-    }
-  })();
-
-  return controller;
+    })();
+  });
 }
 
 
