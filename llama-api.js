@@ -53,33 +53,50 @@ function get_response(body, element) {
 
       const reader = res.body.getReader();
 
-      while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-            
-          const chunk = decoder.decode(value, { stream: true });
-            
-          const lines = chunk.split("\n");
-            
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
+      let buffer = "";
+    let renderTimeout = null;
+    
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+    
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+    
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+    
+        const data = line.slice(6).trim();
+    
+        if (data === "[DONE]") continue;
+    
+        try {
+          const json = JSON.parse(data);
+          const text = json?.choices?.[0]?.delta?.content;
         
-            const data = line.replace("data: ", "").trim();
+          if (!text) continue;
         
-            if (data === "[DONE]") continue;
+          // 🧠 accumulate stream
+          buffer += text;
         
-            try {
-              const json = JSON.parse(data);
-              const text = json?.choices?.[0]?.delta?.content;
-            
-              if (text) {
-                element.append(document.createTextNode(text));
-              }
-            } catch (e) {
-              // ignore malformed chunks
+          // ⚡ immediate fallback (smooth UX)
+          element.textContent = buffer;
+        
+          // 🎨 debounce markdown rendering
+          clearTimeout(renderTimeout);
+          renderTimeout = setTimeout(() => {
+            if (window.marked) {
+              element.innerHTML = marked.parse(buffer);
+            } else {
+              element.textContent = buffer;
             }
-          }
+          }, 60);
+        
+        } catch (e) {
+          // ignore malformed chunks safely
         }
+      }
+    }
 
       // flush decoder (important edge-case fix)
       element.append(document.createTextNode(decoder.decode()));
