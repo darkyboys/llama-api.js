@@ -133,17 +133,11 @@ Returns:
 
 ---
 
-## 🧩 Full Example
+## 🧩 Full Example (Make sure to include the llama-api.js via <script src="llama-api.js"></script> in your html)
 
 ```js
-import {
-  setServerUrl,
-  get_response,
-  stop_generation,
-  get_models
-} from "./llama-api.js";
-
 setServerUrl("http://127.0.0.1:5004");
+
 
 function askAI() {
   const output = document.getElementById("output");
@@ -152,12 +146,16 @@ function askAI() {
     {
       model: "default",
       messages: [
-        { role: "user", content: "Explain AI simply" }
+        { role: "user", content: "Explain quantum physics simply" }
       ]
     },
     output
   );
 }
+
+setTimeout(()=>{
+    stop_generation();
+}, 1000)
 
 askAI();
 ```
@@ -207,35 +205,6 @@ delta.content
 * Uses AbortController for clean interruption
 * Designed for minimal setup and maximum simplicity
 
----
-
-## Example
-
- * This example is made for LLAMA.CPP's llama-server
-```js
-setServerUrl("http://127.0.0.1:5004");
-
-
-function askAI() {
-  const output = document.getElementById("output");
-
-  get_response(
-    {
-      model: "default",
-      messages: [
-        { role: "user", content: "Explain quantum physics simply" }
-      ]
-    },
-    output
-  );
-}
-
-setTimeout(()=>{
-    stop_generation();
-}, 1000)
-
-askAI();
-```
 ---
 
 ## 🛑 License
